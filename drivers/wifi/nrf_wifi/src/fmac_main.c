@@ -690,6 +690,8 @@ enum nrf_wifi_status nrf_wifi_fmac_dev_rem_zep(struct nrf_wifi_drv_priv_zep *drv
 
 static int nrf_wifi_drv_main_zep(const struct device *dev)
 {
+	// Variable to keep track for multiple interfaces
+	static int if_idx=0;
 #ifndef CONFIG_NRF70_RADIO_TEST
 	struct nrf_wifi_fmac_callbk_fns callbk_fns = { 0 };
 	struct nrf_wifi_data_config_params data_config = { 0 };
@@ -697,6 +699,16 @@ static int nrf_wifi_drv_main_zep(const struct device *dev)
 	struct nrf_wifi_vif_ctx_zep *vif_ctx_zep = dev->data;
 
 	vif_ctx_zep->rpu_ctx_zep = &rpu_drv_priv_zep.rpu_ctx_zep;
+
+	if_idx++;
+	if(if_idx > MAX_NUM_VIFS){
+		LOG_ERR("%s: Max number of VIFs reached", __func__);
+		return -ENOMEM;
+	}	
+	if (if_idx > 1) {
+		// FMAC is already initialized for VIF-0
+		return 0;
+	}
 
 #ifdef CONFIG_NRF70_DATA_TX
 	data_config.aggregation = aggregation;
@@ -915,6 +927,19 @@ ETH_NET_DEVICE_DT_INST_DEFINE(0,
 		    nrf_wifi_drv_main_zep, /* init_fn */
 		    NULL, /* pm_action_cb */
 		    &rpu_drv_priv_zep.rpu_ctx_zep.vif_ctx_zep[0], /* data */
+#ifdef CONFIG_NRF70_STA_MODE
+		    &wpa_supp_ops, /* cfg */
+#else /* CONFIG_NRF70_STA_MODE */
+		    NULL, /* cfg */
+#endif /* !CONFIG_NRF70_STA_MODE */
+		    CONFIG_WIFI_INIT_PRIORITY, /* prio */
+		    &wifi_offload_ops, /* api */
+		    CONFIG_NRF_WIFI_IFACE_MTU); /*mtu */
+// Register second interface
+ETH_NET_DEVICE_DT_INST_DEFINE(1,
+				nrf_wifi_drv_main_zep, /* init_fn */
+				NULL, /* pm_action_cb */
+				&rpu_drv_priv_zep.rpu_ctx_zep.vif_ctx_zep[1], /* data */
 #ifdef CONFIG_NRF70_STA_MODE
 		    &wpa_supp_ops, /* cfg */
 #else /* CONFIG_NRF70_STA_MODE */
