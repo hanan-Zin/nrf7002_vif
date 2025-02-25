@@ -1590,6 +1590,7 @@ void nrf_wifi_wpa_supp_event_get_wiphy(void *if_priv,
 	struct nrf_wifi_vif_ctx_zep *vif_ctx_zep = NULL;
 	struct nrf_wifi_ctx_zep *rpu_ctx_zep = NULL;
 	struct wpa_supp_event_supported_band band;
+	struct nrf_wifi_vif_cmd_event* vif_evt = NULL;
 
 	if (!if_priv || !wiphy_info || !event_len) {
 		LOG_ERR("%s: Invalid parameters", __func__);
@@ -1600,6 +1601,15 @@ void nrf_wifi_wpa_supp_event_get_wiphy(void *if_priv,
 	rpu_ctx_zep = vif_ctx_zep->rpu_ctx_zep;
 
 	memset(&band, 0, sizeof(band));
+
+	while ((vif_evt = nrf_wifi_dequeue_cmd_event()) != NULL) {
+		if(vif_evt->vif_event == NRF_WIFI_UMAC_EVENT_NEW_WIPHY) {
+			vif_ctx_zep = nrf_wifi_get_vif_ctx_by_idx(vif_evt->vif_idx);
+			k_free(vif_evt);
+			break;
+		}
+		k_free(vif_evt);
+	}
 
 	for (int i = 0; i < NRF_WIFI_EVENT_GET_WIPHY_NUM_BANDS; i++) {
 		if (nrf_wifi_parse_sband(&wiphy_info->sband[i], &band) != WLAN_STATUS_SUCCESS) {
@@ -1663,6 +1673,7 @@ int nrf_wifi_supp_get_wiphy(void *if_priv)
 		goto out;
 	}
 
+	nrf_wifi_enqueue_cmd_event(NRF_WIFI_UMAC_EVENT_NEW_WIPHY, vif_ctx_zep->vif_idx);
 	status = nrf_wifi_sys_fmac_get_wiphy(rpu_ctx_zep->rpu_ctx, vif_ctx_zep->vif_idx);
 
 	if (status != NRF_WIFI_STATUS_SUCCESS) {
@@ -1850,6 +1861,7 @@ int nrf_wifi_supp_get_conn_info(void *if_priv, struct wpa_conn_info *info)
 	fmac_dev_ctx = rpu_ctx_zep->rpu_ctx;
 
 	vif_ctx_zep->conn_info = info;
+	nrf_wifi_enqueue_cmd_event(NRF_WIFI_UMAC_EVENT_GET_CONNECTION_INFO, vif_ctx_zep->vif_idx);
 	ret = nrf_wifi_sys_fmac_get_conn_info(rpu_ctx_zep->rpu_ctx, vif_ctx_zep->vif_idx);
 	if (ret != NRF_WIFI_STATUS_SUCCESS) {
 		LOG_ERR("%s: nrf_wifi_sys_fmac_get_conn_info failed", __func__);
@@ -1948,6 +1960,7 @@ void nrf_wifi_supp_event_proc_get_conn_info(void *if_priv,
 {
 	struct nrf_wifi_vif_ctx_zep *vif_ctx_zep = NULL;
 	struct wpa_conn_info *conn_info = NULL;
+	struct nrf_wifi_vif_cmd_event* vif_evt = NULL;
 
 	if (!if_priv || !info) {
 		LOG_ERR("%s: Invalid params", __func__);
@@ -1955,6 +1968,16 @@ void nrf_wifi_supp_event_proc_get_conn_info(void *if_priv,
 		return;
 	}
 	vif_ctx_zep = if_priv;
+
+	while ((vif_evt = nrf_wifi_dequeue_cmd_event()) != NULL) {
+		if(vif_evt->vif_event == NRF_WIFI_UMAC_EVENT_GET_CONNECTION_INFO) {
+			vif_ctx_zep = nrf_wifi_get_vif_ctx_by_idx(vif_evt->vif_idx);
+			k_free(vif_evt);
+			break;
+		}
+		k_free(vif_evt);
+	}
+
 	conn_info = vif_ctx_zep->conn_info;
 
 	conn_info->beacon_interval = info->beacon_interval;
@@ -2054,6 +2077,8 @@ static int nrf_wifi_iftype_change(struct nrf_wifi_vif_ctx_zep *vif_ctx_zep, int 
 	chg_vif_info.iftype = iftype;
 	vif_ctx_zep->set_if_event_received = false;
 	vif_ctx_zep->set_if_status = 0;
+
+	nrf_wifi_enqueue_cmd_event(NRF_WIFI_UMAC_EVENT_SET_INTERFACE, vif_ctx_zep->vif_idx);
 	status = nrf_wifi_sys_fmac_chg_vif(rpu_ctx_zep->rpu_ctx,
 					   vif_ctx_zep->vif_idx,
 					   &chg_vif_info);
